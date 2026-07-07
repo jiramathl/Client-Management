@@ -8,6 +8,7 @@ import { clientColorPalette, orgInitials, uniqueSlug } from "@/lib/workspaceHelp
 import { integrationsCatalog } from "@/lib/catalogs";
 import { storage } from "@/lib/storage";
 import { logActivity } from "@/lib/activityLog";
+import bcrypt from "bcryptjs";
 
 function revalidateTab(workspaceId: string, tab: string) {
   revalidatePath(`/admin/${workspaceId}/${tab}`);
@@ -79,13 +80,30 @@ export async function inviteMember(formData: FormData) {
   const workspaceId = formData.get("workspaceId") as string;
   const name = (formData.get("name") as string)?.trim();
   const email = (formData.get("email") as string)?.trim();
-  if (!name || !email) return;
+  const password = formData.get("password") as string;
+  if (!name || !email || !password) return;
 
   const actor = await currentMember(workspaceId);
+  const passwordHash = await bcrypt.hash(password, 10);
   await prisma.member.create({
-    data: { workspaceId, name, email, role: "CLIENT", status: "OFFLINE" },
+    data: { workspaceId, name, email, role: "CLIENT", status: "OFFLINE", passwordHash },
   });
   await logActivity({ workspaceId, memberId: actor?.id, category: "Members", action: `Invited ${email}` });
+  revalidateTab(workspaceId, "members");
+}
+
+export async function setMemberPassword(formData: FormData) {
+  const workspaceId = formData.get("workspaceId") as string;
+  const memberId = formData.get("memberId") as string;
+  const password = formData.get("password") as string;
+  if (!password || password.length < 6) return;
+
+  const actor = await currentMember(workspaceId);
+  const target = await prisma.member.update({
+    where: { id: memberId },
+    data: { passwordHash: await bcrypt.hash(password, 10) },
+  });
+  await logActivity({ workspaceId, memberId: actor?.id, category: "Security", action: `Reset password for ${target.name}` });
   revalidateTab(workspaceId, "members");
 }
 
