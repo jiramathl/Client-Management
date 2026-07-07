@@ -9,6 +9,7 @@ import { integrationsCatalog } from "@/lib/catalogs";
 import { storage } from "@/lib/storage";
 import { logActivity } from "@/lib/activityLog";
 import bcrypt from "bcryptjs";
+import type { MemberRole } from "@/generated/prisma";
 
 function revalidateTab(workspaceId: string, tab: string) {
   revalidatePath(`/admin/${workspaceId}/${tab}`);
@@ -76,19 +77,23 @@ export async function deleteClient({ workspaceId, currentWorkspaceId }: { worksp
 
 // ---------- Members ----------
 
+const ASSIGNABLE_ROLES: MemberRole[] = ["OWNER", "CLIENT", "TEAM"];
+
 export async function inviteMember(formData: FormData) {
   const workspaceId = formData.get("workspaceId") as string;
   const name = (formData.get("name") as string)?.trim();
   const email = (formData.get("email") as string)?.trim();
   const password = formData.get("password") as string;
+  const roleInput = formData.get("role") as string;
+  const role: MemberRole = ASSIGNABLE_ROLES.includes(roleInput as MemberRole) ? (roleInput as MemberRole) : "CLIENT";
   if (!name || !email || !password) return;
 
   const actor = await currentMember(workspaceId);
   const passwordHash = await bcrypt.hash(password, 10);
   await prisma.member.create({
-    data: { workspaceId, name, email, role: "CLIENT", status: "OFFLINE", passwordHash },
+    data: { workspaceId, name, email, role, status: "OFFLINE", passwordHash },
   });
-  await logActivity({ workspaceId, memberId: actor?.id, category: "Members", action: `Invited ${email}` });
+  await logActivity({ workspaceId, memberId: actor?.id, category: "Members", action: `Invited ${email} as ${role}` });
   revalidateTab(workspaceId, "members");
 }
 
@@ -105,6 +110,20 @@ export async function setMemberPassword(formData: FormData) {
   });
   await logActivity({ workspaceId, memberId: actor?.id, category: "Security", action: `Reset password for ${target.name}` });
   revalidateTab(workspaceId, "members");
+}
+
+export async function setMemberRole(formData: FormData) {
+  const workspaceId = formData.get("workspaceId") as string;
+  const memberId = formData.get("memberId") as string;
+  const roleInput = formData.get("role") as string;
+  if (!ASSIGNABLE_ROLES.includes(roleInput as MemberRole)) return;
+  const role = roleInput as MemberRole;
+
+  const actor = await currentMember(workspaceId);
+  const target = await prisma.member.update({ where: { id: memberId }, data: { role } });
+  await logActivity({ workspaceId, memberId: actor?.id, category: "Members", action: `Changed ${target.name}'s role to ${role}` });
+  revalidateTab(workspaceId, "members");
+  revalidateTab(workspaceId, "roles");
 }
 
 export async function removeMember(formData: FormData) {

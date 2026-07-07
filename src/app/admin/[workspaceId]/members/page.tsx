@@ -2,10 +2,15 @@ import { AdminTopbar } from "@/components/admin/AdminTopbar";
 import { Panel } from "@/components/ui/Panel";
 import { Avatar } from "@/components/ui/Avatar";
 import { getMembers, getWorkspace } from "@/lib/data/admin";
-import { inviteMember, removeMember, setMemberPassword } from "@/lib/actions/admin";
+import { inviteMember, removeMember, setMemberPassword, setMemberRole } from "@/lib/actions/admin";
 import type { Member } from "@/generated/prisma";
 
 const statusColor = { ONLINE: "bg-success", AWAY: "bg-brass", OFFLINE: "bg-slate-light" } as const;
+const roleOptions = [
+  { value: "OWNER", label: "Owner" },
+  { value: "CLIENT", label: "Client" },
+  { value: "TEAM", label: "Team" },
+] as const;
 
 function initialsOf(name: string) {
   return name
@@ -32,11 +37,24 @@ function MemberSection({ title, list, workspaceId }: { title: string; list: Memb
                 <div className="text-[13px] font-semibold text-ink">{m.name}</div>
                 <div className="text-[11.5px] text-slate-light">{m.email}</div>
               </div>
-              <span
-                className={`w-fit rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${m.role === "OWNER" ? "bg-[#FBF0DC] text-[#93670F]" : "bg-parchment-2 text-slate"}`}
-              >
-                {m.role === "OWNER" ? "Owner" : m.role === "CLIENT" ? "Client" : "Team"}
-              </span>
+              <form action={setMemberRole} className="flex items-center gap-1.5">
+                <input type="hidden" name="workspaceId" value={workspaceId} />
+                <input type="hidden" name="memberId" value={m.id} />
+                <select
+                  name="role"
+                  defaultValue={m.role}
+                  className="rounded-md border border-border bg-white px-2 py-1 text-[11.5px] font-semibold text-slate outline-none focus:border-brass"
+                >
+                  {roleOptions.map((r) => (
+                    <option key={r.value} value={r.value}>
+                      {r.label}
+                    </option>
+                  ))}
+                </select>
+                <button type="submit" className="rounded-md bg-parchment-2 px-2 py-1 text-[11px] font-semibold text-slate hover:bg-parchment">
+                  Save
+                </button>
+              </form>
               <span className="flex items-center gap-1.5 text-[12px] text-slate">
                 <span className={`h-1.5 w-1.5 rounded-full ${statusColor[m.status]}`} /> {m.status.toLowerCase()}
               </span>
@@ -95,7 +113,7 @@ export default async function MembersPage(props: PageProps<"/admin/[workspaceId]
 
         <Panel>
           <div className="border-b border-border px-[18px] py-3.5">
-            <h3 className="font-serif text-[14.5px] font-semibold">Invite a client member</h3>
+            <h3 className="font-serif text-[14.5px] font-semibold">Invite a member</h3>
           </div>
           <form action={inviteMember} className="flex flex-wrap items-end gap-3 p-[18px]">
             <input type="hidden" name="workspaceId" value={workspaceId} />
@@ -106,6 +124,20 @@ export default async function MembersPage(props: PageProps<"/admin/[workspaceId]
             <div>
               <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate">Email</label>
               <input name="email" type="email" required className="rounded-lg border border-border px-3 py-2 text-[13px] outline-none focus:border-brass" />
+            </div>
+            <div>
+              <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate">Role</label>
+              <select
+                name="role"
+                defaultValue="CLIENT"
+                className="rounded-lg border border-border bg-white px-3 py-2 text-[13px] outline-none focus:border-brass"
+              >
+                {roleOptions.map((r) => (
+                  <option key={r.value} value={r.value}>
+                    {r.label}
+                  </option>
+                ))}
+              </select>
             </div>
             <div>
               <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate">Password</label>
