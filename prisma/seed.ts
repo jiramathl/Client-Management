@@ -370,8 +370,7 @@ async function main() {
     }
 
     for (const f of filesSeed[ws.id] ?? []) {
-      const storageKey = `${workspace.id}/${f.code}-${f.name}`;
-      await storage.save(storageKey, buildDemoFileBytes(f.name));
+      const storageKey = await storage.save(`${workspace.id}/${f.code}-${f.name}`, buildDemoFileBytes(f.name));
       await prisma.file.create({
         data: {
           workspaceId: workspace.id,

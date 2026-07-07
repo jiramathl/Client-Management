@@ -232,8 +232,7 @@ export async function createFile(formData: FormData) {
   const member = await currentMember(workspaceId);
   const code = await nextFileCode(workspaceId);
   const buffer = Buffer.from(await file.arrayBuffer());
-  const storageKey = `${workspaceId}/${code}-${file.name}`;
-  await storage.save(storageKey, buffer);
+  const storageKey = await storage.save(`${workspaceId}/${code}-${file.name}`, buffer);
 
   await prisma.file.create({
     data: { workspaceId, name: file.name, code, sizeBytes: buffer.length, status: "DRAFT", uploadedById: member?.id ?? null, storageKey },
