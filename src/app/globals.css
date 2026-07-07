@@ -1,26 +1,31 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+/* Harbor design tokens — ported 1:1 from the prototype's :root CSS variables
+   (harbor-handoff/index.html) into Tailwind v4's CSS-first @theme config. */
+@theme {
+  --color-navy: #10263b;
+  --color-navy-2: #16324b;
+  --color-teal: #1f4b4f;
+  --color-parchment: #f6f3ec;
+  --color-parchment-2: #efeadd;
+  --color-brass: #c08829;
+  --color-brass-soft: #e4c077;
+  --color-ink: #16232e;
+  --color-slate: #5b6b77;
+  --color-slate-light: #8b98a3;
+  --color-border: #dfd7c6;
+  --color-border-dark: #274056;
+  --color-success: #3d7a5c;
+  --color-danger: #b4553f;
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
+  --font-serif: var(--font-fraunces), serif;
+  --font-sans: var(--font-inter), sans-serif;
+  --font-mono: var(--font-plex-mono), monospace;
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --shadow-soft: 0 4px 16px rgba(16, 38, 59, 0.06);
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--color-parchment);
+  color: var(--color-ink);
 }

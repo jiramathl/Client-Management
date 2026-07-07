@@ -1,0 +1,270 @@
+// Harbor data model — ported from the prototype's in-memory JS objects
+// (see ../../../harbor-handoff 2/HANDOFF.md for the original shape).
+// Phase 1: schema only. Phase 2 wires this up with `prisma migrate dev` + a seed
+// script that reproduces the prototype's demo data, plus Auth.js on top of Member/PendingRequest.
+//
+// Prisma 7: the connection URL lives in prisma.config.ts (CLI/migrate) and the
+// PrismaClient instance is created with a driver adapter (src/lib/prisma.ts) —
+// schema.prisma's datasource block no longer takes a `url`.
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum MemberRole {
+  OWNER // client-side, the primary contact
+  CLIENT // client-side, additional contacts
+  TEAM // your firm's people
+}
+
+enum MemberStatus {
+  ONLINE
+  AWAY
+  OFFLINE
+}
+
+enum TaskColumn {
+  TODO
+  DOING
+  DONE
+}
+
+enum FileStatus {
+  DRAFT
+  REVIEW
+  APPROVED
+}
+
+model Workspace {
+  id        String   @id @default(cuid())
+  name      String
+  code      String // 2-letter badge, e.g. "AI" for Aurora Insurance
+  color     String // hex, used for the sidebar "berth" dot
+  plan      String // Standard | Professional | Enterprise
+  quotaGB   Int
+  createdAt DateTime @default(now())
+
+  members         Member[]
+  groups          Group[]
+  files           File[]
+  tasks           Task[]
+  channels        Channel[]
+  dmThreads       DirectMessageThread[]
+  pendingRequests PendingRequest[]
+  security        SecuritySettings?
+  branding        BrandingSettings?
+  integrations    Integration[]
+  salesforceSync  SalesforceSync?
+  auditEvents     AuditEvent[]
+  usageEvents     UsageEvent[]
+}
+
+model Member {
+  id           String       @id @default(cuid())
+  workspaceId  String
+  workspace    Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  name         String
+  email        String
+  role         MemberRole
+  status       MemberStatus @default(OFFLINE)
+  canApprove   Boolean      @default(false)
+  personal2FA  Boolean      @default(false)
+  // Credentials login (Phase 2). Null for client-side members who haven't signed in yet.
+  passwordHash String?
+  createdAt    DateTime     @default(now())
+
+  groupMemberships GroupMember[]
+  uploadedFiles    File[]              @relation("FileUploadedBy")
+  tasksAssigned    Task[]              @relation("TaskAssignee")
+  sentMessages     Message[]
+  auditEvents      AuditEvent[]
+  usageEvents      UsageEvent[]
+  fileViews        FileView[]
+
+  @@unique([workspaceId, email])
+}
+
+model Group {
+  id          String        @id @default(cuid())
+  workspaceId String
+  workspace   Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  name        String
+  members     GroupMember[]
+  files       File[]
+}
+
+model GroupMember {
+  groupId  String
+  group    Group  @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  memberId String
+  member   Member @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@id([groupId, memberId])
+}
+
+model File {
+  id               String     @id @default(cuid())
+  workspaceId      String
+  workspace        Workspace  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  name             String
+  code             String // short reference code shown in the UI
+  sizeBytes        Int
+  status           FileStatus @default(DRAFT)
+  uploadedById     String?
+  uploadedBy       Member?    @relation("FileUploadedBy", fields: [uploadedById], references: [id], onDelete: SetNull)
+  visibleGroupId   String? // null = visible to everyone in the workspace
+  visibleGroup     Group?     @relation(fields: [visibleGroupId], references: [id], onDelete: SetNull)
+  watermark        Boolean    @default(false)
+  approvalRequested Boolean   @default(false)
+  guestLinkToken   String?    @unique
+  storageKey       String? // key into the StorageProvider abstraction (Phase 4); null while metadata-only
+  createdAt        DateTime  @default(now())
+
+  versions FileVersion[]
+  views    FileView[]
+
+  @@unique([workspaceId, code])
+}
+
+// Per-file "who viewed this" log — recorded every time someone opens the file detail page.
+model FileView {
+  id        String   @id @default(cuid())
+  fileId    String
+  file      File     @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  memberId  String?
+  member    Member?  @relation(fields: [memberId], references: [id], onDelete: SetNull)
+  viewedAt  DateTime @default(now())
+}
+
+model FileVersion {
+  id         String   @id @default(cuid())
+  fileId     String
+  file       File     @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  versionNo  Int
+  uploadedBy String // member name, denormalized for a lightweight version history display
+  createdAt  DateTime @default(now())
+}
+
+model Task {
+  id          String     @id @default(cuid())
+  workspaceId String
+  workspace   Workspace  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  title       String
+  column      TaskColumn @default(TODO)
+  assigneeId  String?
+  assignee    Member?    @relation("TaskAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+  dueDate     DateTime?
+  createdAt   DateTime   @default(now())
+}
+
+model Channel {
+  id          String    @id @default(cuid())
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  name        String // e.g. "general", "claims-team" — internal, never shown to clients
+  messages    Message[]
+
+  @@unique([workspaceId, name])
+}
+
+model DirectMessageThread {
+  id            String    @id @default(cuid())
+  workspaceId   String
+  workspace     Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  clientEmail   String // the client-side contact this thread is with
+  messages      Message[]
+
+  @@unique([workspaceId, clientEmail])
+}
+
+model Message {
+  id         String                @id @default(cuid())
+  channelId  String?
+  channel    Channel?              @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  threadId   String?
+  thread     DirectMessageThread?  @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  authorId   String?
+  author     Member?               @relation(fields: [authorId], references: [id], onDelete: SetNull)
+  text       String
+  createdAt  DateTime              @default(now())
+}
+
+model PendingRequest {
+  id          String    @id @default(cuid())
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  name        String
+  email       String
+  provider    String // "Google Workspace" | "Microsoft Entra"
+  requestedAt DateTime  @default(now())
+}
+
+model SecuritySettings {
+  workspaceId String    @id
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  twoFA       Boolean   @default(false)
+  sso         Boolean   @default(false)
+  watermark   Boolean   @default(false)
+}
+
+model BrandingSettings {
+  workspaceId  String    @id
+  workspace    Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  name         String
+  primaryColor String
+  accentColor  String
+  domain       String
+  // Factory-default snapshot, restored by the Branding tab's "Discard" action
+  defaultName         String
+  defaultPrimaryColor String
+  defaultAccentColor  String
+  defaultDomain       String
+}
+
+model Integration {
+  id          String    @id @default(cuid())
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  code        String // "salesforce" | "docusign" | "slack" | "quickbooks" | ...
+  enabled     Boolean   @default(false)
+
+  @@unique([workspaceId, code])
+}
+
+model SalesforceSync {
+  workspaceId    String    @id
+  workspace      Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  account        String
+  accountId      String
+  contact        String
+  lastSyncedAt   DateTime
+  recordsSynced  Int
+}
+
+model AuditEvent {
+  id          String    @id @default(cuid())
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  memberId    String?
+  member      Member?   @relation(fields: [memberId], references: [id], onDelete: SetNull)
+  action      String
+  ip          String?
+  createdAt   DateTime  @default(now())
+}
+
+// Closes HANDOFF gap #1: this is appended to by real server actions, not seeded once.
+model UsageEvent {
+  id          String    @id @default(cuid())
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  memberId    String?
+  member      Member?   @relation(fields: [memberId], references: [id], onDelete: SetNull)
+  category    String // "Files" | "Tasks" | "Messages" | "Members" | "Security" | "Integrations" | "Branding"
+  action      String
+  createdAt   DateTime  @default(now())
+}
